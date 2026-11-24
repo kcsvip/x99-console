@@ -383,6 +383,95 @@ class HotkeyFilter(QAbstractNativeEventFilter):
         return False, 0
 
 
+# ---------------------------------------------------------------- 按键 OSD 浮层
+# 低级别键盘钩子（WH_KEYBOARD_LL）捕获大小写/数字/滚动锁定与媒体键，屏幕底部弹一个
+# 半透明浮层提示，交互形态参考 Lenovo Hotkeys / Logitech Options。
+WH_KEYBOARD_LL = 13
+WM_KEYDOWN = 0x0100
+WM_SYSKEYDOWN = 0x0104
+
+LRESULT = ctypes.c_long
+HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wt.WPARAM, wt.LPARAM)
+
+
+class _KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [("vkCode", wt.DWORD), ("scanCode", wt.DWORD),
+                ("flags", wt.DWORD), ("time", wt.DWORD),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+
+
+# vkCode → (图标, 名称, 类型 toggle=读锁定状态 / action=普通动作)
+OSD_KEYS = {
+    0x14: ("⇪", "CapsLock", "toggle"),
+    0x90: ("⇭", "NumLock 小键盘", "toggle"),
+    0x91: ("⇳", "ScrollLock", "toggle"),
+    0xAD: ("🔇", "静音", "action"),
+    0xAE: ("🔉", "音量 −", "action"),
+    0xAF: ("🔊", "音量 +", "action"),
+    0xB3: ("⏯", "播放 / 暂停", "action"),
+    0xB0: ("⏭", "下一曲", "action"),
+    0xB1: ("⏮", "上一曲", "action"),
+    0xB2: ("⏹", "停止", "action"),
+}
+
+
+class OsdToast(QWidget):
+    """角落按键 OSD 浮层：半透明深色卡片，图标 + 名称 + 状态，定时自动隐藏。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setFixedSize(236, 74)
+        self._icon = ""
+        self._label = ""
+        self._state = None
+
+    def show_key(self, icon, label, state=None):
+        self._icon, self._label, self._state = icon, label, state
+        self._place()
+        self.update()
+        self.show()
+        self.raise_()
+
+    def _place(self):
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move((screen.width() - self.width()) // 2,
+                  screen.bottom() - self.height() - 28)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        t = theme()
+        r = QRectF(8, 8, self.width() - 16, self.height() - 16)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(12, 12, 16, 225))
+        p.drawRoundedRect(r, 14, 14)
+        pen = QPen(QColor(t["acc"].red(), t["acc"].green(), t["acc"].blue(), 160))
+        pen.setWidth(1)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r, 14, 14)
+
+        p.setPen(QColor(t["acc"]))
+        fi = QFont("Microsoft YaHei", 20)
+        fi.setBold(True)
+        p.setFont(fi)
+        p.drawText(QRectF(24, 8, 56, self.height() - 16), Qt.AlignCenter, self._icon)
+
+        p.setPen(QColor(TEXT))
+        fl = QFont("Microsoft YaHei", 12)
+        fl.setBold(True)
+        p.setFont(fl)
+        p.drawText(QRectF(92, 18, self.width() - 104, 24),
+                   Qt.AlignLeft | Qt.AlignVCenter, self._label)
+        if self._state is not None:
+            p.setPen(QColor(GREEN if self._state == "开启" else MUTED))
+            fs = QFont("Microsoft YaHei", 10)
+            p.setFont(fs)
+            p.drawText(QRectF(92, 42, self.width() - 104, 20),
+                       Qt.AlignLeft | Qt.AlignVCenter, self._state)
+
+
 class Switch(QAbstractButton):
 
     """仿 iOS 的小拨动开关（纯绘制，无 HTML）"""
@@ -777,6 +866,7 @@ class MainWindow(QWidget):
         self.ms_done.connect(self._ms_on_done)
         self._hk_filter = HotkeyFilter(self._on_hotkey)
         self._hk_installed = False
+        self._init_osd()
         self._scene_custom = None
         self._scene = ""
         self._rot_idx = -1
@@ -1027,6 +1117,14 @@ class MainWindow(QWidget):
         self.lbl_port = QLabel("")
         self.lbl_port.setObjectName("muted")
         fl.addWidget(self.lbl_port)
+        lbl_ver = QLabel("v%s" % ABOUT_VERSION)
+        lbl_ver.setObjectName("muted")
+        fl.addWidget(lbl_ver)
+        fl.addSpacing(6)
+        btn_check = QPushButton("检查更新")
+        btn_check.setObjectName("ghost")
+        btn_check.clicked.connect(lambda: self._start_update_check(manual=True))
+        fl.addWidget(btn_check)
         btn_about = QPushButton("关于")
         btn_about.setObjectName("ghost")
         btn_about.clicked.connect(self._show_about)
@@ -4362,6 +4460,51 @@ class MainWindow(QWidget):
         except Exception:
             pass
 
+    # ------------------------------------------------------------ 按键 OSD
+    def _init_osd(self):
+        self._osd = OsdToast(self)
+        self._osd_timer = QTimer(self)
+        self._osd_timer.setSingleShot(True)
+        self._osd_timer.timeout.connect(self._osd.hide)
+        self._osd_hook = None
+        self._osd_proc = None
+        try:
+            _user32.GetKeyState.restype = wt.SHORT
+            self._osd_proc = HOOKPROC(self._ll_osd_proc)
+            self._osd_hook = _user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._osd_proc, None, 0)
+        except Exception:
+            self._osd_hook = None
+
+    def _ll_osd_proc(self, nCode, wParam, lParam):
+        if nCode == 0 and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+            try:
+                kb = ctypes.cast(lParam, ctypes.POINTER(_KBDLLHOOKSTRUCT)).contents
+                vk = kb.vkCode
+                if vk in OSD_KEYS:
+                    QTimer.singleShot(0, lambda v=vk: self._osd_on_key(v))
+            except Exception:
+                pass
+        return _user32.CallNextHookEx(None, nCode, wParam, lParam)
+
+    def _osd_on_key(self, vk):
+        try:
+            icon, label, kind = OSD_KEYS[vk]
+            state = None
+            if kind == "toggle":
+                state = "开启" if (_user32.GetKeyState(vk) & 1) else "关闭"
+            self._osd.show_key(icon, label, state)
+            self._osd_timer.start(1300)
+        except Exception:
+            pass
+
+    def _osd_unhook(self):
+        try:
+            if self._osd_hook:
+                _user32.UnhookWindowsHookEx(self._osd_hook)
+        except Exception:
+            pass
+        self._osd_hook = None
+
     def _on_hotkey(self, hid):
         # 同一条按键消息 Qt 可能回调两次，短时间同 id 直接忽略
         import time
@@ -4936,6 +5079,10 @@ class MainWindow(QWidget):
         except Exception:
             pass
         try:
+            self._osd_unhook()
+        except Exception:
+            pass
+        try:
             self.eng.stop()
         except Exception:
             pass
@@ -4954,7 +5101,7 @@ def _asset_path(name):
     return os.path.join(BASE_DIR, "assets", name)
 
 
-ABOUT_VERSION = "1.6.3"
+ABOUT_VERSION = "1.6.4"
 ABOUT_FEATS = [
     "6 套皮肤，页脚下拉即换：ROG 红黑 / 冰川蓝 / 星云紫 / 翡翠绿 / 琥珀橙 / 极简钢灰",
     "5 路独立特效 + 总亮度 / 总速度 / 联排 / 帧率；6 个情景模式一键换整套风格；灯效轮播、过热守护",
