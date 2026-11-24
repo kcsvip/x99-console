@@ -1,0 +1,27 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 运行时个人数据（实测截图、日志、风扇/键盘/灯效档案等）----
+data/
+*.log
+
+# ---- 构建产物 ----
+build/
+dist/
+打包/dist*/
+打包/build*/
+
+# ---- 成品安装包 / 编译出的 exe 走 Release 附件，不进 git ----
+bin/
+release/
+*.exe
+
+
+# ---- 临时 / 备份文件 ----
+*.tmp
+*.bak
+*_old.*

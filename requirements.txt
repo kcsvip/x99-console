@@ -1,0 +1,7 @@
+# 运行时依赖
+PySide6>=6.12          # Qt 界面框架（LGPL-3.0-or-later）
+hidapi>=0.15           # HID 设备访问（hid / hidapi 绑定）
+pyserial>=3.5          # 串口设备通道
+
+# 仅 scripts/make_icon.py 重新生成托盘图标时需要；日常运行不需要
+Pillow>=10.0
