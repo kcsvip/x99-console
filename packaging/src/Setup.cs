@@ -18,7 +18,7 @@ namespace LightDeckSetup
         public const string AppTitle = "X99 控制台 · ARGB 灯效控制台";
         public const string AppExe = "X99控制台.exe";
         public const string UninstExe = "卸载X99控制台.exe";
-        public const string AppVersion = "1.6.2";
+        public const string AppVersion = "1.6.3";
         public const string Publisher = "自用 · 为本机精粤 X99M GAMING D3/ARGB 主板编写";
         public const string RegKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\X99控制台";
 

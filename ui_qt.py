@@ -14,16 +14,17 @@ import sys
 import threading
 import time
 
-from core import bioslogo, fanprofile, jixue, keyboard as kbmod, mouse as msmod, pcctl
+from core import (bioslogo, fanprofile, jixue, keyboard as kbmod, mouse as msmod,
+                  pcctl, updatecheck)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = (os.path.dirname(os.path.abspath(sys.executable))
            if getattr(sys, "frozen", False) else BASE_DIR)
 
 from PySide6.QtCore import (QAbstractNativeEventFilter, QCoreApplication, QEvent, Qt, QTime,
-                            QTimer, QRectF, QSize, Signal, QPoint, QPointF)
+                            QTimer, QRectF, QSize, Signal, QPoint, QPointF, QThread, QUrl)
 from PySide6.QtGui import (QColor, QPainter, QLinearGradient, QRadialGradient, QIcon, QFont,
-                           QGradient, QPen, QPixmap)
+                           QGradient, QPen, QPixmap, QDesktopServices)
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QColorDialog, QComboBox,
                                QDialog, QFileDialog, QFrame, QGraphicsDropShadowEffect, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
@@ -727,6 +728,25 @@ class ZoneCard(QFrame):
         p.fillRect(QRectF(1, 1, self.width() - 2, 2), g)
 
 
+class _UpdateWorker(QThread):
+    """后台线程查询 GitHub 最新 Release；不阻塞界面。"""
+    done = Signal(object, str)      # 结果 dict（None=失败）, 错误信息
+
+    def __init__(self, current, parent=None):
+        super().__init__(parent)
+        self._current = current
+
+    def run(self):
+        try:
+            info = updatecheck.fetch_latest()
+            if updatecheck.is_newer(info.get("tag", ""), self._current):
+                self.done.emit(info, "")
+            else:
+                self.done.emit({"up_to_date": True}, "")
+        except Exception as e:
+            self.done.emit(None, str(e))
+
+
 class MainWindow(QWidget):
     hw_ready = Signal(object)
     fan_done = Signal(int, str, str)
@@ -1039,6 +1059,9 @@ class MainWindow(QWidget):
         self._sync_live_buttons()
         self.refresh()
         QTimer.singleShot(0, lambda: apply_dwm_titlebar(self))
+
+        # 启动 3 秒后静默检查 GitHub 更新；有新版本才弹窗，失败/已是最新都不打扰
+        QTimer.singleShot(3000, lambda: self._start_update_check(manual=False))
 
         if start_minimized:
             self.hide()
@@ -4805,8 +4828,45 @@ class MainWindow(QWidget):
         except Exception:
             pass
 
+    # ------------------------------------------------------------------ 更新检测
+    def _start_update_check(self, manual=False):
+        if getattr(self, "_update_worker", None) is not None and self._update_worker.isRunning():
+            return
+        self._update_worker = _UpdateWorker(ABOUT_VERSION, self)
+        self._update_worker.done.connect(
+            lambda info, err: self._on_update_result(info, err, manual))
+        self._update_worker.start()
+
+    def _on_update_result(self, info, err, manual):
+        if info is None:
+            if manual:
+                QMessageBox.warning(self, "检查更新",
+                                    "检查更新失败：网络不通或 GitHub 暂时不可用。\n%s" % err)
+            return
+        if info.get("up_to_date"):
+            if manual:
+                QMessageBox.information(self, "检查更新", "当前已是最新版本 v%s。" % ABOUT_VERSION)
+            return
+
+        tag = info.get("tag") or ""
+        url = info.get("url") or updatecheck.RELEASES_URL
+        body = (info.get("body") or "").strip()
+        if len(body) > 500:
+            body = body[:500] + "…"
+        text = "发现新版本 %s（当前 v%s）。\n\n%s\n\n是否打开浏览器前往下载页面？" % (
+            tag, ABOUT_VERSION, body)
+        box = QMessageBox(self)
+        box.setWindowTitle("发现新版本")
+        box.setText(text)
+        box.setIcon(QMessageBox.Information)
+        btn_web = box.addButton("前往下载", QMessageBox.AcceptRole)
+        box.addButton("稍后再说", QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is btn_web:
+            QDesktopServices.openUrl(QUrl(url))
+
     def _show_about(self):
-        dlg = AboutDialog(self)
+        dlg = AboutDialog(self, on_check=lambda: self._start_update_check(manual=True))
         dlg.exec()
 
     # ------------------------------------------------------------------ 关于作者（标签页）
@@ -4894,7 +4954,7 @@ def _asset_path(name):
     return os.path.join(BASE_DIR, "assets", name)
 
 
-ABOUT_VERSION = "1.6.2"
+ABOUT_VERSION = "1.6.3"
 ABOUT_FEATS = [
     "6 套皮肤，页脚下拉即换：ROG 红黑 / 冰川蓝 / 星云紫 / 翡翠绿 / 琥珀橙 / 极简钢灰",
     "5 路独立特效 + 总亮度 / 总速度 / 联排 / 帧率；6 个情景模式一键换整套风格；灯效轮播、过热守护",
@@ -5202,8 +5262,9 @@ class ZoomDialog(QDialog):
 class AboutDialog(QDialog):
     """关于 / 支持作者：功能介绍 + 捐赠二维码"""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, on_check=None):
         super().__init__(parent)
+        self._on_check = on_check
         th = theme()
         acc, acc2 = th["acc"], th["acc2"]
         self.setWindowTitle("关于 X99 控制台")
@@ -5279,6 +5340,12 @@ class AboutDialog(QDialog):
         left.setObjectName("abMuted")
         foot.addWidget(left)
         foot.addStretch(1)
+        if self._on_check is not None:
+            btn_check = QPushButton("检查更新")
+            btn_check.setObjectName("ghost")
+            btn_check.clicked.connect(self._on_check)
+            foot.addWidget(btn_check)
+            foot.addSpacing(10)
         btn = QPushButton("关闭")
         btn.setObjectName("abClose")
         btn.clicked.connect(self.accept)

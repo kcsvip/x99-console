@@ -7,8 +7,8 @@ Windows 桌面 ARGB 灯控与硬件监控软件。原生 Qt（PySide6）界面�
 > 本项目为个人自用整理开源。**硬件针对性很强**，在其他主板 / 其他控制器上大概率无法直接点灯，
 > 仅作同类逆向与控制思路参考。
 
-**下载成品**：[Releases · v1.6.2](https://github.com/kcsvip/x99-console/releases/tag/v1.6.2)
-（`X99-Console-Setup-v1.6.2.exe`，安装包未签名，SmartScreen 选「更多信息 → 仍要运行」）
+**下载成品**：[Releases · 最新版](https://github.com/kcsvip/x99-console/releases/latest)
+（`X99-Console-Setup-vX.Y.Z.exe`，安装包未签名，SmartScreen 选「更多信息 → 仍要运行」）
 
 ## 功能一览
 
@@ -20,8 +20,17 @@ Windows 桌面 ARGB 灯控与硬件监控软件。原生 Qt（PySide6）界面�
 - **风扇调速**：各路手动百分比 / 交回 BIOS，**配置持久化到本地档案，重启后自动还原**；写后验证转速是否真的变化
 - **系统级控制**：性能模式（节能 / 平衡 / 高性能 / 卓越性能）· CPU 限频 · WiFi / 蓝牙开关 · 小键盘开关
 - **托盘常驻**：单实例互斥量，重复双击只把已有窗口拉到前台；关窗收进托盘，灯效继续
+- **更新检测**：启动后静默查询 GitHub Releases，发现新版本弹窗提示并可一键打开下载页；关于页可手动检查
 - **6 套皮肤**：ROG 红黑 / 冰川蓝 / 星云紫 / 翡翠绿 / 琥珀橙 / 极简钢灰，重启保持
 - 命令行参数：`--minimized`（只出托盘）、`--tab 0..8`（启动直达标签页）
+
+## 界面预览
+
+| 主界面 · 5 路 ARGB 控制 | 系统监控面板 |
+| --- | --- |
+| ![主界面](docs/screenshot-main.png) | ![系统监控](docs/screenshot-monitor.png) |
+| 情景与守护 | 硬件与控制 |
+| ![情景与守护](docs/screenshot-scene.png) | ![硬件与控制](docs/screenshot-hardware.png) |
 
 ## 目录结构
 
@@ -29,9 +38,10 @@ Windows 桌面 ARGB 灯控与硬件监控软件。原生 Qt（PySide6）界面�
 x99-console/
 ├─ client_qt.py            # 程序入口
 ├─ ui_qt.py               # Qt 界面
-├─ core/                  # 设备驱动、特效、引擎、风扇档案、系统控制等核心模块
+├─ core/                  # 设备驱动、特效、引擎、风扇档案、系统控制、更新检测等核心模块
 ├─ hwmon/                 # 硬件监控 + 风扇控制组件（C# 源码 HwMon.cs 及第三方 DLL）
 ├─ assets/                # 图标、托盘 ICO、捐赠二维码（可自行删除 donate.jpg）
+├─ docs/                  # 界面截图
 ├─ scripts/make_icon.py   # 从母版重生成托盘图标的脚本（需 Pillow）
 ├─ packaging/
 │  ├─ X99控制台Qt.spec    # PyInstaller 打包脚本
@@ -45,7 +55,7 @@ x99-console/
 
 ### 方式一：直接用成品
 
-在本仓库的 **Releases** 页面下载对应版本的 `X99控制台安装包.exe`，双击按界面提示安装
+在本仓库的 **Releases** 页面下载对应版本的 `X99-Console-Setup-vX.Y.Z.exe`，双击按界面提示安装
 （默认装到 `%LOCALAPPDATA%\X99控制台`，主程序无需管理员权限）。安装包未做数字签名，
 首次运行 SmartScreen 可能提示「已保护你的电脑」，点「更多信息 → 仍要运行」即可。
 

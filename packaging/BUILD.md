@@ -57,9 +57,14 @@ Copy-Item hwmon\X99硬件监控.exe "dist/X99控制台/hwmon\"
 
 主程序会依次在 `程序目录\hwmon\` 与源码根 `hwmon\` 下查找该 exe。
 
+> **合规提醒**：主板 BIOS 固件（`*.bin`）、AMI 刷写工具（`AFUDOS.exe` / `AfuEfix64.efi` / `boot*.efi`）
+> 及教程 PDF 属于第三方版权，**不得**打进发行包。打包载荷前务必剔除 `assets/bios/` 目录与所有
+> `*.bin` / `*.efi` 文件；缺少这些文件时，相关 BIOS / 开机 LOGO 功能会自动降级，不影响灯控主流程。
+
 ## 4.（可选）生成安装包
 
-1. 把第 3 步的 `dist/X99控制台/` 整目录压成 `payload.zip`（目录内为程序文件，解压即安装目录内容）；
+1. 把第 3 步的 `dist/X99控制台/` 整目录压成 `payload.zip`（目录内为程序文件，解压即安装目录内容；
+   打包时按上面的合规提醒排除 `bios/` 目录与固件 / 刷写工具）；
 2. 在 `packaging/src/` 下编译安装器，内嵌载荷：
 
 ```powershell
