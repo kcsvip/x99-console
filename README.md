@@ -7,6 +7,9 @@ Windows 桌面 ARGB 灯控与硬件监控软件。原生 Qt（PySide6）界面�
 > 本项目为个人自用整理开源。**硬件针对性很强**，在其他主板 / 其他控制器上大概率无法直接点灯，
 > 仅作同类逆向与控制思路参考。
 
+**下载成品**：[Releases · v1.6.2](https://github.com/kcsvip/x99-console/releases/tag/v1.6.2)
+（`X99-Console-Setup-v1.6.2.exe`，安装包未签名，SmartScreen 选「更多信息 → 仍要运行」）
+
 ## 功能一览
 
 - **5 路 ARGB 5V3 排针**，每路最多 100 颗灯珠；实时预览、联排跨路、总亮度、总速度（全局倍率）、预设保存 / 导入导出
