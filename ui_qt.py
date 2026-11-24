@@ -421,7 +421,7 @@ class OsdToast(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setFixedSize(236, 74)
+        self.setFixedSize(268, 82)
         self._icon = ""
         self._label = ""
         self._state = None
@@ -442,35 +442,54 @@ class OsdToast(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         t = theme()
-        r = QRectF(8, 8, self.width() - 16, self.height() - 16)
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(12, 12, 16, 225))
-        p.drawRoundedRect(r, 14, 14)
         acc_c = QColor(t["acc"])
-        pen = QPen(QColor(acc_c.red(), acc_c.green(), acc_c.blue(), 160))
+
+        # 深色圆角卡片 + 极淡描边
+        card = QRectF(6, 6, self.width() - 12, self.height() - 12)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(16, 17, 22, 232))
+        p.drawRoundedRect(card, 18, 18)
+        pen = QPen(QColor(255, 255, 255, 26))
         pen.setWidth(1)
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(r, 14, 14)
+        p.drawRoundedRect(card, 18, 18)
 
-        p.setPen(QColor(t["acc"]))
-        fi = QFont("Microsoft YaHei", 20)
+        # 左侧圆形图标底（主题色淡填充）
+        d = 48
+        ix = 20
+        iy = (self.height() - d) / 2
+        circ = QRectF(ix, iy, d, d)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(acc_c.red(), acc_c.green(), acc_c.blue(), 46))
+        p.drawEllipse(circ)
+        p.setPen(QColor(TEXT))
+        fi = QFont("Microsoft YaHei", 19)
         fi.setBold(True)
         p.setFont(fi)
-        p.drawText(QRectF(24, 8, 56, self.height() - 16), Qt.AlignCenter, self._icon)
+        p.drawText(circ, Qt.AlignCenter, self._icon)
 
-        p.setPen(QColor(TEXT))
-        fl = QFont("Microsoft YaHei", 12)
-        fl.setBold(True)
-        p.setFont(fl)
-        p.drawText(QRectF(92, 18, self.width() - 104, 24),
-                   Qt.AlignLeft | Qt.AlignVCenter, self._label)
+        tx = ix + d + 16
+        tw = self.width() - tx - 18
         if self._state is not None:
+            p.setPen(QColor(TEXT))
+            fl = QFont("Microsoft YaHei", 13)
+            fl.setBold(True)
+            p.setFont(fl)
+            p.drawText(QRectF(tx, 20, tw, 24),
+                       Qt.AlignLeft | Qt.AlignVCenter, self._label)
             p.setPen(QColor(GREEN if self._state == "开启" else MUTED))
             fs = QFont("Microsoft YaHei", 10)
             p.setFont(fs)
-            p.drawText(QRectF(92, 42, self.width() - 104, 20),
+            p.drawText(QRectF(tx, 46, tw, 20),
                        Qt.AlignLeft | Qt.AlignVCenter, self._state)
+        else:
+            p.setPen(QColor(TEXT))
+            fl = QFont("Microsoft YaHei", 13)
+            fl.setBold(True)
+            p.setFont(fl)
+            p.drawText(QRectF(tx, 6, tw, self.height() - 12),
+                       Qt.AlignLeft | Qt.AlignVCenter, self._label)
 
 
 class Switch(QAbstractButton):
@@ -1635,6 +1654,17 @@ class MainWindow(QWidget):
         lbl_ndef.setObjectName("muted")
         rndef.addWidget(lbl_ndef, 1)
         c2.addLayout(rndef)
+
+        rosdd = QHBoxLayout()
+        rosdd.setSpacing(9)
+        self.sw_osd = Switch(bool(getattr(self.eng, "osd_enabled", True)))
+        self.sw_osd.clicked.connect(self._on_osd_toggle)
+        rosdd.addWidget(self.sw_osd)
+        lbl_osd = QLabel("按键 OSD 屏幕提示")
+        lbl_osd.setObjectName("muted")
+        lbl_osd.setToolTip("按下 CapsLock / 小键盘锁 / 媒体键时，屏幕底部弹出按键浮层提示")
+        rosdd.addWidget(lbl_osd, 1)
+        c2.addLayout(rosdd)
         c2.addStretch(1)
         h.addWidget(self._panel(c2), 1)
 
@@ -3323,7 +3353,7 @@ class MainWindow(QWidget):
 
         本页不刷固件，刷写由用户从 U 盘启动 EFI Shell 完成（见右侧四步）。
         """
-        self._jx = {"pkg": {}, "bench": None, "busy": False}
+        self._jx = {"pkg": {}, "bench": None, "busy": False, "custom_rom": None}
 
         w = QWidget()
         h = QHBoxLayout(w)
@@ -3392,6 +3422,20 @@ class MainWindow(QWidget):
         rowu.addWidget(self.btn_jx_stock)
         rowu.addStretch(1)
         c1.addLayout(rowu)
+
+        rowc = QHBoxLayout()
+        rowc.setSpacing(7)
+        self.btn_jx_cust = QPushButton("自选镜像…")
+        self.btn_jx_cust.setObjectName("ghost")
+        self.btn_jx_cust.setCursor(Qt.PointingHandCursor)
+        self.btn_jx_cust.setToolTip("选择本地已合法取得的 16 MB BIOS 镜像；本程序不内置、不联网下载任何固件")
+        self.btn_jx_cust.clicked.connect(self._jx_pick_rom)
+        rowc.addWidget(self.btn_jx_cust)
+        self.lbl_jx_cust = QLabel("未自选镜像：使用所选包内固件")
+        self.lbl_jx_cust.setObjectName("muted")
+        self.lbl_jx_cust.setWordWrap(True)
+        rowc.addWidget(self.lbl_jx_cust, 1)
+        c1.addLayout(rowc)
 
         rowb = QHBoxLayout()
         rowb.setSpacing(10)
@@ -3477,6 +3521,51 @@ class MainWindow(QWidget):
         self._jx_scan_usb()
         self._jx_verify()
 
+    def _jx_pick_rom(self):
+        # 已自选时再次点击 = 清除自选，回到包内固件
+        if self._jx.get("custom_rom"):
+            self._jx["custom_rom"] = None
+            self._jx_sync_cust()
+            self._jx_set_log("已清除自选镜像，恢复使用包内固件。")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "选择本地 BIOS 镜像", "",
+                                              "BIOS 镜像 (*.bin)")
+        if not path:
+            return
+        try:
+            size = os.path.getsize(path)
+        except OSError as e:                                  # noqa: BLE001
+            self._jx_set_log("读不到该文件：%s" % e)
+            return
+        if size != jixue.BIN_SIZE:
+            self._jx_set_log("镜像大小为 %d 字节，不是 16 MB（%d），已拒绝；请确认型号匹配。"
+                             % (size, jixue.BIN_SIZE))
+            return
+        try:
+            with open(path, "rb") as f:
+                f.read()                                  # 整包试读，确认文件可读、没坏
+        except OSError as e:                                  # noqa: BLE001
+            self._jx_set_log("镜像打不开或读不全：%s" % e)
+            return
+        self._jx["custom_rom"] = path
+        self._jx_sync_cust()
+        self._jx_set_log("已自选镜像：%s。写入时覆盖包内固件；请确认镜像来源合法、与主板型号匹配。"
+                         % os.path.basename(path))
+
+    def _jx_sync_cust(self):
+        c = self._jx.get("custom_rom")
+        if c and not os.path.isfile(c):
+            # 自选文件被删 / 移动：界面与实际一起回退到包内固件
+            self._jx["custom_rom"] = None
+            c = None
+            self._jx_set_log("自选镜像已不存在，已回退到包内固件。")
+        if c:
+            self.lbl_jx_cust.setText("自选：%s" % os.path.basename(c))
+            self.btn_jx_cust.setText("清除自选")
+        else:
+            self.lbl_jx_cust.setText("未自选镜像：使用所选包内固件")
+            self.btn_jx_cust.setText("自选镜像…")
+
     def _jx_scan_usb(self):
         usbs = jixue.list_usb()
         self.cmb_jx_usb.clear()
@@ -3556,14 +3645,21 @@ class MainWindow(QWidget):
             return
         title = jixue.KINDS[kind]["title"]
         custom = None
+        custom_tag = ""
         try:
-            cp = self._lg_custom_path(kind)
-            if os.path.isfile(cp):
+            cp = self._jx.get("custom_rom")
+            if cp and os.path.isfile(cp):
                 custom = cp
+                custom_tag = "自选镜像"
+            else:
+                cp = self._lg_custom_path(kind)
+                if os.path.isfile(cp):
+                    custom = cp
+                    custom_tag = "换过开机 LOGO 的镜像"
         except Exception:                                        # noqa: BLE001
             custom = None
-        extra = ("\n\n这次会写入**自定义镜像**（含换过的开机 LOGO），不是官方原包。"
-                 if custom else "")
+            custom_tag = ""
+        extra = ("\n\n这次会写入**%s**，不是官方原包。" % custom_tag) if custom else ""
         ans = QMessageBox.question(
             self, "写入刷写盘",
             "会把「%s」的 U 盘刷写包写到 %s 根目录。%s\n\n"
@@ -3575,7 +3671,7 @@ class MainWindow(QWidget):
         self.btn_jx_jixue.setEnabled(False)
         self.btn_jx_stock.setEnabled(False)
         self._jx_set_log("正在写入 %s 到 %s …%s"
-                         % (title, drive, "（自定义 LOGO 镜像）" if custom else ""))
+                         % (title, drive, "（%s）" % custom_tag if custom else ""))
 
         def done(v):
             self.btn_jx_jixue.setEnabled(True)
@@ -3638,7 +3734,7 @@ class MainWindow(QWidget):
 
         本页只改镜像里的图片，不刷固件；刷写仍走「鸡血 BIOS」页的 U 盘流程。
         """
-        self._lg = {"bmp": None, "src": "", "built": None, "orig": {}}
+        self._lg = {"bmp": None, "src": "", "built": None, "orig": {}, "base_rom": None}
 
         w = QWidget()
         h = QHBoxLayout(w)
@@ -3680,6 +3776,20 @@ class MainWindow(QWidget):
         self.cmb_lg_base.setToolTip("换了 LOGO 的镜像基于哪个包；刷过鸡血就选鸡血包，别把 3.1 GHz 刷没了")
         self.cmb_lg_base.currentIndexChanged.connect(self._lg_switch_base)
         right.addWidget(self.cmb_lg_base)
+
+        rowbase = QHBoxLayout()
+        rowbase.setSpacing(7)
+        self.btn_lg_base_pick = QPushButton("自选 BIOS 镜像…")
+        self.btn_lg_base_pick.setObjectName("ghost")
+        self.btn_lg_base_pick.setCursor(Qt.PointingHandCursor)
+        self.btn_lg_base_pick.setToolTip("选择本地已合法取得的 16 MB 镜像作为改 LOGO 的基底；不选则用上方面板对应的内置包")
+        self.btn_lg_base_pick.clicked.connect(self._lg_pick_base)
+        rowbase.addWidget(self.btn_lg_base_pick)
+        self.lbl_lg_base = QLabel("基底：内置包")
+        self.lbl_lg_base.setObjectName("muted")
+        self.lbl_lg_base.setWordWrap(True)
+        rowbase.addWidget(self.lbl_lg_base, 1)
+        right.addLayout(rowbase)
 
         row1 = QHBoxLayout()
         row1.setSpacing(7)
@@ -3768,6 +3878,12 @@ class MainWindow(QWidget):
     def _lg_base(self):
         return self.cmb_lg_base.currentData() or "jixue"
 
+    def _lg_base_rom_path(self):
+        """改 LOGO 的基底镜像：优先自选本地 .bin，否则用内置包镜像。"""
+        if self._lg.get("base_rom") and os.path.isfile(self._lg["base_rom"]):
+            return self._lg["base_rom"]
+        return jixue.bin_path(self._lg_base())
+
     def _lg_show(self, bmp, note=""):
         if not bmp:
             self.lbl_lg_view.setText("没有图可预览")
@@ -3781,15 +3897,17 @@ class MainWindow(QWidget):
             self.lbl_lg_view.setToolTip(note)
 
     def _lg_orig_bmp(self, kind):
-        if kind in self._lg["orig"]:
-            return self._lg["orig"][kind]
-        rom = open(jixue.bin_path(kind), "rb").read()
+        key = (kind, self._lg_base_rom_path())
+        if key in self._lg["orig"]:
+            return self._lg["orig"][key]
+        rom = open(self._lg_base_rom_path(), "rb").read()
         loc = bioslogo.locate(rom)
-        self._lg["orig"][kind] = loc["bmp"]
+        self._lg["orig"][key] = loc["bmp"]
         return loc["bmp"]
 
     def _lg_boot(self):
         kind = self._lg_base()
+        self._lg_sync_base()
         try:
             bmp = self._lg_orig_bmp(kind)
         except Exception as e:                                  # noqa: BLE001
@@ -3807,18 +3925,80 @@ class MainWindow(QWidget):
 
     def _lg_switch_base(self):
         self._lg["built"] = None
+        # 换基底后旧图尺寸可能不匹配，清空待重新选图
+        self._lg["bmp"] = None
+        self._lg["src"] = ""
         kind = self._lg_base()
         try:
             bmp = self._lg_orig_bmp(kind)
         except Exception as e:                                  # noqa: BLE001
             self.lbl_lg_log.setText("基底包读取失败：%s" % e)
             return
-        if self._lg["bmp"] is None:
-            self._lg_show(bmp, "当前是官方原图")
-        else:
-            self._lg_show(self._lg["bmp"], "你选的图")
-        self.lbl_lg_log.setText("基底切成 %s；重新点「生成 ROM」才会生效。"
+        self._lg_show(bmp, "当前是官方原图")
+        self.lbl_lg_state.setText("官方原图")
+        self._lg_widget_sync()
+        self.lbl_lg_log.setText("基底切成 %s；请重新选图，再点「生成 ROM」才会生效。"
                                 % ("鸡血 BIOS" if kind == "jixue" else "原版 BIOS"))
+
+    def _lg_pick_base(self):
+        # 已自选时再次点击 = 清除自选，回到内置包
+        if self._lg.get("base_rom"):
+            self._lg["base_rom"] = None
+            self._lg["orig"] = {}
+            self._lg["built"] = None
+            self._lg["bmp"] = None
+            self._lg["src"] = ""
+            self._lg_sync_base()
+            self.lbl_lg_log.setText("已清除自选基底，回到内置包。")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "选择基底 BIOS 镜像", "",
+                                              "BIOS 镜像 (*.bin)")
+        if not path:
+            return
+        try:
+            size = os.path.getsize(path)
+        except OSError as e:                                  # noqa: BLE001
+            self.lbl_lg_log.setText("读不到该文件：%s" % e)
+            return
+        if size != jixue.BIN_SIZE:
+            self.lbl_lg_log.setText("镜像大小为 %d 字节，不是 16 MB（%d），已拒绝；请确认型号匹配。"
+                                   % (size, jixue.BIN_SIZE))
+            return
+        # 先试读并定位 LOGO：打不开 / 读不到 LOGO 都不采纳，避免坏镜像当基底
+        try:
+            with open(path, "rb") as f:
+                rom = f.read()
+            loc = bioslogo.locate(rom)
+            bmp = loc["bmp"]
+        except Exception as e:                                # noqa: BLE001
+            self.lbl_lg_log.setText("基底镜像打不开或读不到 LOGO：%s，未采纳；请换文件。" % e)
+            return
+        self._lg["base_rom"] = path
+        self._lg["orig"] = {}
+        self._lg["built"] = None
+        # 旧图是按旧基底尺寸转换的，换基底后清空，需重新选图
+        self._lg["bmp"] = None
+        self._lg["src"] = ""
+        self._lg_sync_base()
+        self._lg_show(bmp, os.path.basename(path))
+        self.lbl_lg_state.setText("官方原图")
+        self._lg_widget_sync()
+        self.lbl_lg_log.setText("已选基底：%s；重新选图后点「生成 ROM」写入该镜像。"
+                                % os.path.basename(path))
+
+    def _lg_sync_base(self):
+        c = self._lg.get("base_rom")
+        if c and not os.path.isfile(c):
+            # 自选基底被删 / 移动：界面与实际一起回退到内置包
+            self._lg["base_rom"] = None
+            c = None
+            self.lbl_lg_log.setText("自选基底已不存在，已回退到内置包。")
+        if c:
+            self.lbl_lg_base.setText("自选：%s" % os.path.basename(c))
+            self.btn_lg_base_pick.setText("清除自选")
+        else:
+            self.lbl_lg_base.setText("基底：内置包")
+            self.btn_lg_base_pick.setText("自选 BIOS 镜像…")
 
     def _lg_pick(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -3828,7 +4008,7 @@ class MainWindow(QWidget):
             return
         kind = self._lg_base()
         try:
-            loc = bioslogo.locate(open(jixue.bin_path(kind), "rb").read())
+            loc = bioslogo.locate(open(self._lg_base_rom_path(), "rb").read())
             bmp = bioslogo.convert_image(path, loc["w"], loc["h"])
         except Exception as e:                                  # noqa: BLE001
             self.lbl_lg_log.setText("这张图转不了：%s" % e)
@@ -3874,7 +4054,7 @@ class MainWindow(QWidget):
         bmp = self._lg["bmp"]
 
         def work():
-            rom = open(jixue.bin_path(kind), "rb").read()
+            rom = open(self._lg_base_rom_path(), "rb").read()
             new_rom, info = bioslogo.make_rom(rom, bmp)
             cp = self._lg_custom_path(kind)
             os.makedirs(os.path.dirname(cp), exist_ok=True)
@@ -4496,6 +4676,8 @@ class MainWindow(QWidget):
 
     def _osd_on_key(self, vk):
         try:
+            if not getattr(self.eng, "osd_enabled", True):
+                return
             icon, label, kind = OSD_KEYS[vk]
             state = None
             if kind == "toggle":
@@ -4504,6 +4686,17 @@ class MainWindow(QWidget):
             self._osd_timer.start(1300)
         except Exception:
             pass
+
+    def _on_osd_toggle(self):
+        self.eng.osd_enabled = self.sw_osd.isChecked()
+        try:
+            self.eng.save()
+        except Exception:
+            pass
+        if not self.eng.osd_enabled:
+            self._osd_timer.stop()
+            self._osd.hide()
+        self.eng._add_log("按键 OSD 提示：%s" % ("已开启" if self.eng.osd_enabled else "已关闭"))
 
     def _osd_unhook(self):
         try:
@@ -4554,6 +4747,17 @@ class MainWindow(QWidget):
         self._night_saved = None
         self.refresh()
         self._sync_light_buttons()
+
+        # 兜底：刚从硬件关断切回，控制器可能还没进直通模式；
+        # 延迟再对各路重进一次 Direct，避免头几帧逐颗数据被忽略而灯不亮。
+        def _reenter_direct():
+            try:
+                for i in range(len(self.eng.zones)):
+                    self.eng._apply_zone(i)
+            except Exception:                                   # noqa: BLE001
+                pass
+
+        QTimer.singleShot(250, _reenter_direct)
 
     def _sync_light_buttons(self):
         off = getattr(self, "_night_saved", None) is not None
@@ -5084,7 +5288,7 @@ class MainWindow(QWidget):
         left.addWidget(s_follow)
         follow = follow_label(CYAN)
         left.addWidget(follow)
-        fol_tip = QLabel("更新日志、装机视频、BIOS 折腾记录都发在这两个号上")
+        fol_tip = QLabel("更新日志、装机视频、BIOS 折腾记录见开源仓库与下面两个号")
         fol_tip.setObjectName("abMuted")
         fol_tip.setWordWrap(True)
         left.addWidget(fol_tip)
@@ -5125,7 +5329,7 @@ def _asset_path(name):
     return os.path.join(BASE_DIR, "assets", name)
 
 
-ABOUT_VERSION = "1.6.5"
+ABOUT_VERSION = "1.6.6"
 ABOUT_FEATS = [
     "6 套皮肤，页脚下拉即换：ROG 红黑 / 冰川蓝 / 星云紫 / 翡翠绿 / 琥珀橙 / 极简钢灰",
     "5 路独立特效 + 总亮度 / 总速度 / 联排 / 帧率；6 个情景模式一键换整套风格；灯效轮播、过热守护",
@@ -5191,20 +5395,23 @@ def _about_info_block(text_min_width=None, plain=False):
     return lv
 
 
-FOLLOW_BILI = "https://search.bilibili.com/all?keyword=Kcs1993"
+FOLLOW_REPO = "https://github.com/kcsvip/x99-console"
+FOLLOW_BILI = "https://space.bilibili.com/14020732?spm_id_from=333.337.0.0"
 FOLLOW_DY = "https://www.douyin.com/search/CK2768"
 
 
 def follow_label(color=None):
-    """「B 站 Kcs1993 / 抖音 CK2768」一行（关于作者页与「关于」弹窗共用）"""
+    """「开源仓库 / B 站 Kcs1993 / 抖音 CK2768」一行（关于作者页与「关于」弹窗共用）"""
     c = color or theme()["acc"]
-    lb = QLabel('B 站&nbsp;&nbsp;<a href="%s" style="color:%s; text-decoration:none;">Kcs1993</a>'
+    lb = QLabel('开源&nbsp;&nbsp;<a href="%s" style="color:%s; text-decoration:none;">GitHub · x99-console</a>'
+                '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;B 站&nbsp;&nbsp;'
+                '<a href="%s" style="color:%s; text-decoration:none;">Kcs1993</a>'
                 '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;抖音&nbsp;&nbsp;'
                 '<a href="%s" style="color:%s; text-decoration:none;">CK2768</a>'
-                % (FOLLOW_BILI, c, FOLLOW_DY, c))
+                % (FOLLOW_REPO, c, FOLLOW_BILI, c, FOLLOW_DY, c))
     lb.setTextFormat(Qt.RichText)
     lb.setOpenExternalLinks(True)
-    lb.setToolTip("B 站 Kcs1993　抖音 CK2768（点一下直接在浏览器里打开搜索页）")
+    lb.setToolTip("开源仓库 GitHub · x99-console　B 站 Kcs1993　抖音 CK2768（点一下直接在浏览器里打开）")
     lb.setCursor(Qt.PointingHandCursor)
     return lb
 

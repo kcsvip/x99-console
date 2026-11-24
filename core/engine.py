@@ -51,6 +51,7 @@ class Engine:
         }
         self.config_path = config_path
         self.theme_name = "rog"        # 界面皮肤（config 里持久化）
+        self.osd_enabled = True        # 按键 OSD 屏幕提示开关（config 里持久化）
         self._t0 = time.perf_counter()
         self._stop = False
         self._thread = None
@@ -62,6 +63,7 @@ class Engine:
         self._override = {}      # {index: (color, expire_ts)}
         self._reconnect_at = 0
         self._err_log_t = 0
+        self._direct_fail = 0    # 连续直通写入失败次数，达阈值才判死连接
         self.log = []
         self._dirty = False
         self.sysinfo = _sysinfo.SysInfo(os.path.dirname(os.path.abspath(config_path)))
@@ -146,6 +148,8 @@ class Engine:
             th = data.get("ui", {}).get("theme")
             if th:
                 self.theme_name = th
+            if "osd" in data.get("ui", {}):
+                self.osd_enabled = bool(data["ui"]["osd"])
         except Exception as e:
             self._add_log("读取配置失败：%s" % e)
 
@@ -157,7 +161,8 @@ class Engine:
                                                 "speed", "brightness", "leds", "direction")}
                               for z in self.zones],
                     "master": self.master,
-                    "ui": {"theme": getattr(self, "theme_name", "rog")}}
+                    "ui": {"theme": getattr(self, "theme_name", "rog"),
+                           "osd": bool(getattr(self, "osd_enabled", True))}}
             tmp = self.config_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -379,9 +384,12 @@ class Engine:
                 frame = frame[::-1]
             try:
                 self.dev.direct(z["area"], frame)
+                self._direct_fail = 0
             except Exception as e:
-                self._add_log("直通写入失败：%s" % e)
-                self.dev.connected = False
+                self._direct_fail += 1
+                if self._direct_fail >= 5:
+                    self._add_log("直通连续失败 %d 次：%s" % (self._direct_fail, e))
+                    self.dev.connected = False
                 return
             # 预览采样：每路最多 36 个采样点
             step = max(1, n // 36)
