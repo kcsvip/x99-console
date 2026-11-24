@@ -446,7 +446,8 @@ class OsdToast(QWidget):
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(12, 12, 16, 225))
         p.drawRoundedRect(r, 14, 14)
-        pen = QPen(QColor(t["acc"].red(), t["acc"].green(), t["acc"].blue(), 160))
+        acc_c = QColor(t["acc"])
+        pen = QPen(QColor(acc_c.red(), acc_c.green(), acc_c.blue(), 160))
         pen.setWidth(1)
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
@@ -1001,8 +1002,15 @@ class MainWindow(QWidget):
         self.btn_off = QPushButton("全部熄灭")
         self.btn_off.setObjectName("danger")
         self.btn_off.setCursor(Qt.PointingHandCursor)
-        self.btn_off.clicked.connect(self.eng.set_off)
+        self.btn_off.clicked.connect(self._lights_off)
         tl.addWidget(self.btn_off)
+
+        self.btn_on = QPushButton("开灯")
+        self.btn_on.setObjectName("primary")
+        self.btn_on.setCursor(Qt.PointingHandCursor)
+        self.btn_on.setEnabled(False)
+        self.btn_on.clicked.connect(self._lights_on)
+        tl.addWidget(self.btn_on)
 
         # 窗口按钮：系统标题栏已经并进这条顶栏，最小化 / 最大化 / 关闭自己画
         capbox = QHBoxLayout()
@@ -4514,27 +4522,43 @@ class MainWindow(QWidget):
         self._hk_last_id, self._hk_last_t = hid, now
 
         if hid == 1:
-            # 已经关过一次、还没还原时，不要用"关灯状态"覆盖基线
-            if not getattr(self, "_night_saved", None):
-                self._night_saved = {"master": int(self.eng.master.get("brightness", 100)),
-                                     "zones": [dict(z) for z in self.eng.zones]}
-            self.eng.set_off()
-            self.eng._add_log("快捷键：全部熄灭")
+            self._lights_off()
         elif hid == 2:
-            sv = getattr(self, "_night_saved", None)
-            if sv:
-                for i, z in enumerate(sv["zones"][:len(self.eng.zones)]):
-                    self.eng.set_zone(i, effect=z.get("effect", "rainbow"),
-                                      colors=list(z.get("colors", [])),
-                                      leds=z.get("leds", 30),
-                                      speed=z.get("speed", 45),
-                                      brightness=z.get("brightness", 100),
-                                      direction=z.get("direction", 0))
-                self.eng.set_master(brightness=sv["master"])
-                self.sl_master.setValue(sv["master"])
-                self.eng._add_log("快捷键：已恢复")
-                self._night_saved = None
-                self.refresh()
+            self._lights_on()
+
+    # ---------------------------------------------------------- 熄灯 / 恢复
+    def _lights_off(self):
+        """全部熄灭：先存当前灯效基线，再硬件关断。按钮与快捷键共用。"""
+        if not getattr(self, "_night_saved", None):
+            self._night_saved = {"master": int(self.eng.master.get("brightness", 100)),
+                                 "zones": [dict(z) for z in self.eng.zones]}
+        self.eng.set_off()
+        self.eng._add_log("全部熄灭")
+        self._sync_light_buttons()
+
+    def _lights_on(self):
+        """按关灯前基线恢复灯效；无基线时不动作。"""
+        sv = getattr(self, "_night_saved", None)
+        if not sv:
+            return
+        for i, z in enumerate(sv["zones"][:len(self.eng.zones)]):
+            self.eng.set_zone(i, effect=z.get("effect", "rainbow"),
+                              colors=list(z.get("colors", [])),
+                              leds=z.get("leds", 30),
+                              speed=z.get("speed", 45),
+                              brightness=z.get("brightness", 100),
+                              direction=z.get("direction", 0))
+        self.eng.set_master(brightness=sv["master"])
+        self.sl_master.setValue(sv["master"])
+        self.eng._add_log("已恢复")
+        self._night_saved = None
+        self.refresh()
+        self._sync_light_buttons()
+
+    def _sync_light_buttons(self):
+        off = getattr(self, "_night_saved", None) is not None
+        self.btn_off.setEnabled(not off)
+        self.btn_on.setEnabled(off)
 
     # ------------------------------------------------------------------ 交互
     def _on_zone_changed(self, idx, kw):
@@ -5101,7 +5125,7 @@ def _asset_path(name):
     return os.path.join(BASE_DIR, "assets", name)
 
 
-ABOUT_VERSION = "1.6.4"
+ABOUT_VERSION = "1.6.5"
 ABOUT_FEATS = [
     "6 套皮肤，页脚下拉即换：ROG 红黑 / 冰川蓝 / 星云紫 / 翡翠绿 / 琥珀橙 / 极简钢灰",
     "5 路独立特效 + 总亮度 / 总速度 / 联排 / 帧率；6 个情景模式一键换整套风格；灯效轮播、过热守护",
