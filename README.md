@@ -33,6 +33,8 @@ Windows 桌面 ARGB 灯控与硬件监控软件。原生 Qt（PySide6）界面�
 | ![主界面](docs/screenshot-main.png) | ![系统监控](docs/screenshot-monitor.png) |
 | 情景与守护 | 硬件与控制 |
 | ![情景与守护](docs/screenshot-scene.png) | ![硬件与控制](docs/screenshot-hardware.png) |
+| 托盘右键菜单 |  |
+| ![托盘菜单](docs/screenshot-tray.png) |  |
 
 ## 目录结构
 
