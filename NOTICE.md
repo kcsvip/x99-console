@@ -15,6 +15,15 @@
 | System.Runtime.CompilerServices.Unsafe.dll | 6.1.2 | Microsoft | .NET Runtime Library License（MIT 类） | .NET Runtime |
 | System.Threading.AccessControl.dll | 10.0.3 | Microsoft | .NET Runtime Library License（MIT 类） | .NET Runtime |
 
+## 内置闭源工具（仅安装包附带，源码仓库不含该二进制）
+
+| 文件 | 版本 | 归属 | 许可 | 说明 |
+|---|---|---|---|---|
+| ChangeLogoPro.exe | 5.11.0039 | American Megatrends, Inc. ©2019 | AMI 专有闭源（未附带源码，不并入本项目 GPL） | AMI 固件开机 Logo 的列出 / 提取 / 替换命令行工具。仅在「开机 LOGO」页作为可选后端调用；开源源码仓库与 git 不包含此 exe，由本地打包脚本从 `tools/` 目录收进安装包。文件未做数字签名。 |
+
+- 该工具为 AMI 专有程序，本项目仅以子进程方式调用其命令行，未修改其二进制；其商标、版权与许可条款归 American Megatrends, Inc. 所有。
+- 校验 SHA-256（本地打包所用副本）：`663797BECAE16924B77097E71B78097051D80E27D235830E91EC029B92F4E84B`。
+
 ## Python 运行时依赖（见 `requirements.txt`）
 
 | 包 | 许可证 | 说明 |

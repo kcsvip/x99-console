@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 
-from core import (bioslogo, fanprofile, jixue, keyboard as kbmod, mouse as msmod,
+from core import (bioslogo, change_logo, fanprofile, jixue, keyboard as kbmod, mouse as msmod,
                   pcctl, updatecheck)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -3349,7 +3349,7 @@ class MainWindow(QWidget):
             pass
 
     def _tab_jixue(self):
-        """E5 v3 全核睿频解锁：官方包校验 + 一键铺 U 盘刷写盘 + 跑分对比
+        """E5 v3 睿频 / 跑分对比：基于自选镜像铺 U 盘刷写盘 + 跑分对比
 
         本页不刷固件，刷写由用户从 U 盘启动 EFI Shell 完成（见右侧四步）。
         """
@@ -3380,11 +3380,6 @@ class MainWindow(QWidget):
         self.lbl_jx_plat.setWordWrap(True)
         c1.addWidget(self.lbl_jx_plat)
 
-        self.lbl_jx_pkg = QLabel("官方包：校验中…")
-        self.lbl_jx_pkg.setObjectName("muted")
-        self.lbl_jx_pkg.setWordWrap(True)
-        c1.addWidget(self.lbl_jx_pkg)
-
         rowg = QHBoxLayout()
         rowg.setSpacing(10)
         self.lbl_jx_gain = QLabel("全核 2400 MHz  →  3100 MHz")
@@ -3408,18 +3403,12 @@ class MainWindow(QWidget):
         btn_rf.setToolTip("重新扫描可移动磁盘")
         btn_rf.clicked.connect(self._jx_scan_usb)
         rowu.addWidget(btn_rf)
-        self.btn_jx_jixue = QPushButton("写入鸡血包")
-        self.btn_jx_jixue.setObjectName("primary")
-        self.btn_jx_jixue.setCursor(Qt.PointingHandCursor)
-        self.btn_jx_jixue.setToolTip("把官方鸡血 BIOS 的 U 盘刷写包铺到 U 盘")
-        self.btn_jx_jixue.clicked.connect(lambda: self._jx_write("jixue"))
-        rowu.addWidget(self.btn_jx_jixue)
-        self.btn_jx_stock = QPushButton("写入原版包")
-        self.btn_jx_stock.setObjectName("seg")
-        self.btn_jx_stock.setCursor(Qt.PointingHandCursor)
-        self.btn_jx_stock.setToolTip("铺原厂 BIOS，用于回滚")
-        self.btn_jx_stock.clicked.connect(lambda: self._jx_write("stock"))
-        rowu.addWidget(self.btn_jx_stock)
+        self.btn_jx_write = QPushButton("写入 U 盘")
+        self.btn_jx_write.setObjectName("primary")
+        self.btn_jx_write.setCursor(Qt.PointingHandCursor)
+        self.btn_jx_write.setToolTip("把自选镜像铺成 U 盘刷写盘；需先自选 16 MB 镜像")
+        self.btn_jx_write.clicked.connect(self._jx_write_custom)
+        rowu.addWidget(self.btn_jx_write)
         rowu.addStretch(1)
         c1.addLayout(rowu)
 
@@ -3431,7 +3420,7 @@ class MainWindow(QWidget):
         self.btn_jx_cust.setToolTip("选择本地已合法取得的 16 MB BIOS 镜像；本程序不内置、不联网下载任何固件")
         self.btn_jx_cust.clicked.connect(self._jx_pick_rom)
         rowc.addWidget(self.btn_jx_cust)
-        self.lbl_jx_cust = QLabel("未自选镜像：使用所选包内固件")
+        self.lbl_jx_cust = QLabel("未自选：写入前必须先选择本地 16 MB 镜像")
         self.lbl_jx_cust.setObjectName("muted")
         self.lbl_jx_cust.setWordWrap(True)
         rowc.addWidget(self.lbl_jx_cust, 1)
@@ -3468,10 +3457,10 @@ class MainWindow(QWidget):
         c2.addWidget(t2)
 
         steps = [
-            ("1", "插 U 盘点「写入鸡血包」", "程序铺好 EFI\\BOOT 与刷写脚本，并回读校验 16 MB 镜像"),
+            ("1", "自选镜像后点「写入 U 盘」", "程序铺好 EFI\\BOOT 与刷写脚本，用自选镜像覆盖，并回读校验 16 MB"),
             ("2", "关机，插到主板后置 USB", "BIOS 里把 U 盘设为首选启动（或开机连按 F11 选它）"),
             ("3", "EFI Shell 自动刷写", "全程别断电、别按电源键，刷完自己重启"),
-            ("4", "回来跑分验证", "全核 2.4 GHz → 3.1 GHz，徽章变「已解锁」"),
+            ("4", "回来跑分验证", "全核频率与增益可在本页跑分对比"),
         ]
         for n, title, sub in steps:
             row = QHBoxLayout()
@@ -3496,7 +3485,7 @@ class MainWindow(QWidget):
 
         c2.addSpacing(2)
         warn = QLabel("这块板是单 BIOS 芯片，刷坏只能拆芯片用编程器救。\n"
-                      "所以：先用「写入原版包」做一张回滚盘，并确认供电稳定再刷。")
+                      "请确认镜像型号匹配、来源合法，供电稳定，刷写过程中切勿断电。")
         warn.setWordWrap(True)
         warn.setStyleSheet("font-size: 10.5px; color: #ffb4b4; line-height: 150%%;")
         c2.addWidget(warn)
@@ -3505,6 +3494,22 @@ class MainWindow(QWidget):
 
         QTimer.singleShot(150, self._jx_boot)
         return w
+
+    def _confirm_disclaimer(self, action):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("刷写免责说明")
+        box.setText("操作前请确认：")
+        box.setInformativeText(
+            "%s。\n\n"
+            "· 本板为单 BIOS 芯片，刷坏通常需拆下芯片用编程器才能救砖；\n"
+            "· 请确认镜像来源合法、与主板型号匹配，型号不符有变砖风险；\n"
+            "· 刷写过程中切勿断电、切勿按电源键；\n"
+            "· 由此产生的一切风险与后果由使用者自行承担。\n\n"
+            "已确认上述风险，是否继续？" % action)
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        box.setDefaultButton(QMessageBox.No)
+        return box.exec() == QMessageBox.Yes
 
     def _jx_set_log(self, text):
         self.lbl_jx_log.setText(text)
@@ -3519,14 +3524,13 @@ class MainWindow(QWidget):
                p["bios_version"], p["bios_date"], mark))
         self.lbl_jx_gain.setText("全核 %d MHz  →  %d MHz" % (p["base_mhz"], jixue.TURBO_MHZ))
         self._jx_scan_usb()
-        self._jx_verify()
 
     def _jx_pick_rom(self):
-        # 已自选时再次点击 = 清除自选，回到包内固件
+        # 已自选时再次点击 = 清除自选
         if self._jx.get("custom_rom"):
             self._jx["custom_rom"] = None
             self._jx_sync_cust()
-            self._jx_set_log("已清除自选镜像，恢复使用包内固件。")
+            self._jx_set_log("已清除自选镜像，尚未选择镜像。")
             return
         path, _ = QFileDialog.getOpenFileName(self, "选择本地 BIOS 镜像", "",
                                               "BIOS 镜像 (*.bin)")
@@ -3549,22 +3553,23 @@ class MainWindow(QWidget):
             return
         self._jx["custom_rom"] = path
         self._jx_sync_cust()
-        self._jx_set_log("已自选镜像：%s。写入时覆盖包内固件；请确认镜像来源合法、与主板型号匹配。"
+        self._jx_set_log("已自选镜像：%s。写入时将以该镜像铺盘；请确认镜像来源合法、与主板型号匹配。"
                          % os.path.basename(path))
 
     def _jx_sync_cust(self):
         c = self._jx.get("custom_rom")
         if c and not os.path.isfile(c):
-            # 自选文件被删 / 移动：界面与实际一起回退到包内固件
+            # 自选文件被删 / 移动：清空自选
             self._jx["custom_rom"] = None
             c = None
-            self._jx_set_log("自选镜像已不存在，已回退到包内固件。")
+            self._jx_set_log("自选镜像已不存在，请重新选择。")
         if c:
             self.lbl_jx_cust.setText("自选：%s" % os.path.basename(c))
             self.btn_jx_cust.setText("清除自选")
         else:
-            self.lbl_jx_cust.setText("未自选镜像：使用所选包内固件")
+            self.lbl_jx_cust.setText("未自选：写入前必须先选择本地 16 MB 镜像")
             self.btn_jx_cust.setText("自选镜像…")
+        self._jx_refresh_write_btn()
 
     def _jx_scan_usb(self):
         usbs = jixue.list_usb()
@@ -3581,37 +3586,27 @@ class MainWindow(QWidget):
             ok_any = ok_any or good
         if not usbs:
             self.cmb_jx_usb.addItem("（没检测到 U 盘，插上后点「刷新」）", None)
-        self.btn_jx_jixue.setEnabled(ok_any)
-        self.btn_jx_stock.setEnabled(ok_any)
-        # 按钮是灰的时候，鼠标悬停也要说清楚为什么点不动
-        tip_off = "还没有可用的 U 盘：插一个 FAT32 的盘，再点「刷新」"
-        tip_on_j = "把官方鸡血 BIOS 的 U 盘刷写包铺到 U 盘"
-        tip_on_s = "铺原厂 BIOS，用于回滚"
-        self.btn_jx_jixue.setToolTip(tip_on_j if ok_any else tip_off)
-        self.btn_jx_stock.setToolTip(tip_on_s if ok_any else tip_off)
+        self._jx["usb_ok"] = ok_any
+        self._jx_refresh_write_btn()
         if usbs:
             self._jx_set_log("检测到 %d 个可移动磁盘%s。"
                              % (len(usbs), "" if ok_any else "，但没有 FAT32 的，不能用来刷 BIOS"))
         else:
             self._jx_set_log("没检测到可移动磁盘：插一个 FAT32 的 U 盘，再点「刷新」。")
 
-    def _jx_verify(self):
-        def done(v):
-            if isinstance(v, Exception):
-                self.lbl_jx_pkg.setText("官方包校验失败：%s" % v)
-                return
-            self._jx["pkg"] = v
-            parts = []
-            for k in ("jixue", "stock"):
-                r = v.get(k) or {}
-                nm = "鸡血" if k == "jixue" else "原版"
-                if r.get("ok"):
-                    parts.append("%s ✓ 16 MB / %s" % (nm, r.get("sha256", "")[:8]))
-                else:
-                    parts.append("%s ✗ %s" % (nm, r.get("why") or "缺失"))
-            self.lbl_jx_pkg.setText("官方包（精粤 X9MPS007）：" + "　·　".join(parts))
-
-        self._jx_async(jixue.verify_all, done)
+    def _jx_refresh_write_btn(self):
+        usb_ok = self._jx.get("usb_ok")
+        has_rom = bool(self._jx.get("custom_rom")
+                       and os.path.isfile(self._jx["custom_rom"]))
+        enable = bool(usb_ok and has_rom)
+        self.btn_jx_write.setEnabled(enable)
+        if not usb_ok:
+            tip = "还没有可用的 FAT32 U 盘：插一个再点「刷新」"
+        elif not has_rom:
+            tip = "还没自选镜像：先在本页选择本地 16 MB 镜像"
+        else:
+            tip = "把自选镜像铺成 U 盘刷写盘"
+        self.btn_jx_write.setToolTip(tip)
 
     def _jx_async(self, fn, on_done):
         box = {"done": False, "val": None}
@@ -3634,7 +3629,7 @@ class MainWindow(QWidget):
 
         QTimer.singleShot(200, poll)
 
-    def _jx_write(self, kind):
+    def _jx_write_custom(self):
         drive = self.cmb_jx_usb.currentData()
         if not drive:
             self._jx_set_log("先插一个 FAT32 的 U 盘，再点「刷新」。")
@@ -3643,46 +3638,36 @@ class MainWindow(QWidget):
         if not ok:
             self._jx_set_log("这个盘不能用来刷 BIOS：%s" % why)
             return
-        title = jixue.KINDS[kind]["title"]
-        custom = None
-        custom_tag = ""
-        try:
-            cp = self._jx.get("custom_rom")
-            if cp and os.path.isfile(cp):
-                custom = cp
-                custom_tag = "自选镜像"
-            else:
-                cp = self._lg_custom_path(kind)
-                if os.path.isfile(cp):
-                    custom = cp
-                    custom_tag = "换过开机 LOGO 的镜像"
-        except Exception:                                        # noqa: BLE001
-            custom = None
-            custom_tag = ""
-        extra = ("\n\n这次会写入**%s**，不是官方原包。" % custom_tag) if custom else ""
-        ans = QMessageBox.question(
-            self, "写入刷写盘",
-            "会把「%s」的 U 盘刷写包写到 %s 根目录。%s\n\n"
-            "会覆盖该盘上已有的 EFI\\BOOT 目录，其它文件不动。\n继续吗？"
-            % (title, drive, extra),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if ans != QMessageBox.Yes:
+        rom = None
+        tag = ""
+        cp = self._jx.get("custom_rom")
+        if cp and os.path.isfile(cp):
+            rom = cp
+            tag = "自选镜像"
+        else:
+            cp = self._lg_custom_path("custom")
+            if os.path.isfile(cp):
+                rom = cp
+                tag = "换过开机 LOGO 的镜像"
+        if not rom:
+            self._jx_set_log("还没有可写入的镜像：请先在本页自选本地 16 MB 镜像。")
             return
-        self.btn_jx_jixue.setEnabled(False)
-        self.btn_jx_stock.setEnabled(False)
-        self._jx_set_log("正在写入 %s 到 %s …%s"
-                         % (title, drive, "（%s）" % custom_tag if custom else ""))
+        if not self._confirm_disclaimer("把镜像刷写到 %s" % drive):
+            return
+        self.btn_jx_write.setEnabled(False)
+        self._jx_set_log("正在写入 %s 到 %s（%s）…"
+                         % (os.path.basename(rom), drive, tag))
 
         def done(v):
-            self.btn_jx_jixue.setEnabled(True)
-            self.btn_jx_stock.setEnabled(True)
+            self.btn_jx_write.setEnabled(True)
+            self._jx_refresh_write_btn()
             if isinstance(v, Exception):
                 self._jx_set_log("写入失败：%s" % v)
                 return
             ok2, log = v
             self._jx_set_log(("✓ " if ok2 else "✗ ") + " | ".join(log))
 
-        self._jx_async(lambda: jixue.write_usb(drive, kind, custom), done)
+        self._jx_async(lambda: jixue.write_usb_custom(drive, rom), done)
 
     def _on_jx_bench(self):
         if self._jx.get("busy"):
@@ -3734,7 +3719,8 @@ class MainWindow(QWidget):
 
         本页只改镜像里的图片，不刷固件；刷写仍走「鸡血 BIOS」页的 U 盘流程。
         """
-        self._lg = {"bmp": None, "src": "", "built": None, "orig": {}, "base_rom": None}
+        self._lg = {"bmp": None, "src": "", "built": None, "orig": {}, "base_rom": None,
+                    "cl_exe": None}
 
         w = QWidget()
         h = QHBoxLayout(w)
@@ -3770,22 +3756,15 @@ class MainWindow(QWidget):
         right = QVBoxLayout()
         right.setSpacing(7)
 
-        self.cmb_lg_base = QComboBox()
-        self.cmb_lg_base.addItem("基底 · 鸡血 BIOS（3.1 GHz）", "jixue")
-        self.cmb_lg_base.addItem("基底 · 原版 BIOS", "stock")
-        self.cmb_lg_base.setToolTip("换了 LOGO 的镜像基于哪个包；刷过鸡血就选鸡血包，别把 3.1 GHz 刷没了")
-        self.cmb_lg_base.currentIndexChanged.connect(self._lg_switch_base)
-        right.addWidget(self.cmb_lg_base)
-
         rowbase = QHBoxLayout()
         rowbase.setSpacing(7)
-        self.btn_lg_base_pick = QPushButton("自选 BIOS 镜像…")
+        self.btn_lg_base_pick = QPushButton("选择基底镜像…")
         self.btn_lg_base_pick.setObjectName("ghost")
         self.btn_lg_base_pick.setCursor(Qt.PointingHandCursor)
-        self.btn_lg_base_pick.setToolTip("选择本地已合法取得的 16 MB 镜像作为改 LOGO 的基底；不选则用上方面板对应的内置包")
+        self.btn_lg_base_pick.setToolTip("选择本地已合法取得的 16 MB 镜像作为改 LOGO 的基底；程序不内置、不联网下载任何固件")
         self.btn_lg_base_pick.clicked.connect(self._lg_pick_base)
         rowbase.addWidget(self.btn_lg_base_pick)
-        self.lbl_lg_base = QLabel("基底：内置包")
+        self.lbl_lg_base = QLabel("未选择基底镜像")
         self.lbl_lg_base.setObjectName("muted")
         self.lbl_lg_base.setWordWrap(True)
         rowbase.addWidget(self.lbl_lg_base, 1)
@@ -3804,6 +3783,12 @@ class MainWindow(QWidget):
         btn_rst.setToolTip("删掉生成的自定义镜像，回到官方图")
         btn_rst.clicked.connect(self._lg_reset)
         row1.addWidget(btn_rst)
+        btn_exp = QPushButton("导出当前图…")
+        btn_exp.setObjectName("ghost")
+        btn_exp.setCursor(Qt.PointingHandCursor)
+        btn_exp.setToolTip("把镜像里当前这张开机画面导出成 BMP / PNG 存档，不改动固件")
+        btn_exp.clicked.connect(self._lg_export)
+        row1.addWidget(btn_exp)
         row1.addStretch(1)
         right.addLayout(row1)
 
@@ -3814,7 +3799,7 @@ class MainWindow(QWidget):
         self.btn_lg_build.clicked.connect(self._lg_build)
         right.addWidget(self.btn_lg_build)
 
-        self.lbl_lg_log = QLabel("选图 → 生成 ROM → 去「鸡血 BIOS」页插 U 盘点写入")
+        self.lbl_lg_log = QLabel("先选择基底镜像 → 选图 → 生成 ROM → 去「鸡血 BIOS」页写入")
         self.lbl_lg_log.setObjectName("muted")
         self.lbl_lg_log.setWordWrap(True)
         self.lbl_lg_log.setAlignment(Qt.AlignTop)
@@ -3822,6 +3807,49 @@ class MainWindow(QWidget):
 
         body.addLayout(right, 1)
         c1.addLayout(body)
+
+        # --------------------------------------- 外部 AMI 工具（ChangeLogoPro，随安装包内置）
+        ext = QVBoxLayout()
+        ext.setSpacing(6)
+        ext_title = QLabel("外部 AMI 工具（ChangeLogoPro · 随安装包内置）")
+        ext_title.setObjectName("sectionTitle")
+        ext.addWidget(ext_title)
+
+        ext_row1 = QHBoxLayout()
+        self.lbl_cl_status = QLabel("未检测到工具")
+        self.lbl_cl_status.setObjectName("muted")
+        self.lbl_cl_status.setWordWrap(True)
+        ext_row1.addWidget(self.lbl_cl_status, 1)
+        self.btn_cl_pick = QPushButton("指定工具…")
+        self.btn_cl_pick.setObjectName("ghost")
+        self.btn_cl_pick.setCursor(Qt.PointingHandCursor)
+        self.btn_cl_pick.setToolTip("手动选择其他位置的 ChangeLogoPro.exe；默认使用安装包内置版本")
+        self.btn_cl_pick.clicked.connect(self._cl_pick_tool)
+        ext_row1.addWidget(self.btn_cl_pick)
+        ext.addLayout(ext_row1)
+
+        self.cmb_cl_mode = QComboBox()
+        self.cmb_cl_mode.addItem("列出镜像里的 Logo（诊断）", change_logo.MODE_LIST)
+        self.cmb_cl_mode.addItem("替换开机大 Logo（Splash）", change_logo.MODE_SPLASH)
+        self.cmb_cl_mode.addItem("替换开机小 Logo（Small）", change_logo.MODE_SMALL)
+        self.cmb_cl_mode.addItem("提取镜像里的 Logo", change_logo.MODE_EXTRACT)
+        ext.addWidget(self.cmb_cl_mode)
+
+        self.btn_cl_run = QPushButton("调用外部工具")
+        self.btn_cl_run.setObjectName("seg")
+        self.btn_cl_run.setCursor(Qt.PointingHandCursor)
+        self.btn_cl_run.setToolTip("调用 ChangeLogoPro 处理镜像；输出仍需自行刷写")
+        self.btn_cl_run.clicked.connect(self._cl_run)
+        ext.addWidget(self.btn_cl_run)
+
+        self.lbl_cl_log = QLabel("ChangeLogoPro 是命令行工具，无需双击 exe：在上方选模式后点「调用外部工具」，结果回显在本页。\n"
+                                 "面向标准胶囊 BIOS；本板换图建议用上方纯 Python 流程，可先用「列出镜像里的 Logo」查看识别到的图片。")
+        self.lbl_cl_log.setObjectName("muted")
+        self.lbl_cl_log.setWordWrap(True)
+        self.lbl_cl_log.setAlignment(Qt.AlignTop)
+        ext.addWidget(self.lbl_cl_log)
+
+        c1.addLayout(ext)
         h.addWidget(self._panel(c1), 3)
 
         # ------------------------------------------------------- 右：步骤与风险
@@ -3833,10 +3861,10 @@ class MainWindow(QWidget):
         c2.addWidget(t2)
 
         steps = [
-            ("1", "选图 · 必须 800×600 8 位色", "BIOS 只吃这个规格，程序自动缩放居中、黑边补齐"),
-            ("2", "选基底 · 别把鸡血刷没了", "已刷 3.1 GHz 就选鸡血包：新镜像同时保住睿频和新 LOGO"),
+            ("1", "自选基底镜像", "选择本地已合法取得的 16 MB 镜像；程序不内置、不下载固件"),
+            ("2", "选图 · 800×600 8 位色", "BIOS 只吃这个规格，程序自动缩放居中、黑边补齐"),
             ("3", "生成 ROM · 铺 U 盘", "回「鸡血 BIOS」页选盘 → 写入，会自动带上这张图"),
-            ("4", "刷完开机看效果", "全程别断电；出问题用原版回滚盘刷回来"),
+            ("4", "刷完开机看效果", "全程别断电；型号与来源自负，刷坏需编程器救砖"),
         ]
         for n, title, sub in steps:
             row = QHBoxLayout()
@@ -3871,18 +3899,18 @@ class MainWindow(QWidget):
         QTimer.singleShot(150, self._lg_boot)
         return w
 
-    def _lg_custom_path(self, kind):
+    def _lg_custom_path(self, kind="custom"):
         return os.path.join(os.path.dirname(self.presets_dir), "bios_custom",
-                            "logo_%s.bin" % kind)
+                            "logo_custom.bin")
 
     def _lg_base(self):
-        return self.cmb_lg_base.currentData() or "jixue"
+        return "custom"
 
     def _lg_base_rom_path(self):
-        """改 LOGO 的基底镜像：优先自选本地 .bin，否则用内置包镜像。"""
+        """改 LOGO 的基底镜像：只取自选本地 .bin；未选返回 None。"""
         if self._lg.get("base_rom") and os.path.isfile(self._lg["base_rom"]):
             return self._lg["base_rom"]
-        return jixue.bin_path(self._lg_base())
+        return None
 
     def _lg_show(self, bmp, note=""):
         if not bmp:
@@ -3897,51 +3925,45 @@ class MainWindow(QWidget):
             self.lbl_lg_view.setToolTip(note)
 
     def _lg_orig_bmp(self, kind):
-        key = (kind, self._lg_base_rom_path())
+        rom = self._lg_base_rom_path()
+        if not rom:
+            raise RuntimeError("尚未选择基底镜像")
+        key = (kind, rom)
         if key in self._lg["orig"]:
             return self._lg["orig"][key]
-        rom = open(self._lg_base_rom_path(), "rb").read()
-        loc = bioslogo.locate(rom)
+        rom_data = open(rom, "rb").read()
+        loc = bioslogo.locate(rom_data)
         self._lg["orig"][key] = loc["bmp"]
         return loc["bmp"]
 
     def _lg_boot(self):
         kind = self._lg_base()
         self._lg_sync_base()
+        rom = self._lg_base_rom_path()
+        if not rom:
+            self.lbl_lg_view.setText("未选择基底镜像")
+            self.lbl_lg_state.setText("未选镜像")
+            self.lbl_lg_log.setText("请先点「选择基底镜像…」，选择本地 16 MB BIOS 镜像。")
+            self._cl_refresh_status()
+            return
         try:
             bmp = self._lg_orig_bmp(kind)
         except Exception as e:                                  # noqa: BLE001
             self.lbl_lg_view.setText("读不到镜像里的 LOGO：%s" % e)
             return
         if self._lg["bmp"] is None:
-            self._lg_show(bmp, "当前是官方原图（JGINYUE）")
+            self._lg_show(bmp, os.path.basename(rom))
         cp = self._lg_custom_path(kind)
         if os.path.isfile(cp):
-            self.lbl_lg_log.setText("已有自定义镜像：%s（去鸡血页点写入就会用它）"
+            self.lbl_lg_log.setText("已有自定义镜像：%s（去鸡血页写入就会用它）"
                                     % os.path.basename(cp))
             self.lbl_lg_state.setText("已生成自定义")
         else:
-            self.lbl_lg_state.setText("官方原图")
-
-    def _lg_switch_base(self):
-        self._lg["built"] = None
-        # 换基底后旧图尺寸可能不匹配，清空待重新选图
-        self._lg["bmp"] = None
-        self._lg["src"] = ""
-        kind = self._lg_base()
-        try:
-            bmp = self._lg_orig_bmp(kind)
-        except Exception as e:                                  # noqa: BLE001
-            self.lbl_lg_log.setText("基底包读取失败：%s" % e)
-            return
-        self._lg_show(bmp, "当前是官方原图")
-        self.lbl_lg_state.setText("官方原图")
-        self._lg_widget_sync()
-        self.lbl_lg_log.setText("基底切成 %s；请重新选图，再点「生成 ROM」才会生效。"
-                                % ("鸡血 BIOS" if kind == "jixue" else "原版 BIOS"))
+            self.lbl_lg_state.setText("当前原图")
+        self._cl_refresh_status()
 
     def _lg_pick_base(self):
-        # 已自选时再次点击 = 清除自选，回到内置包
+        # 已自选时再次点击 = 清除自选
         if self._lg.get("base_rom"):
             self._lg["base_rom"] = None
             self._lg["orig"] = {}
@@ -3949,7 +3971,9 @@ class MainWindow(QWidget):
             self._lg["bmp"] = None
             self._lg["src"] = ""
             self._lg_sync_base()
-            self.lbl_lg_log.setText("已清除自选基底，回到内置包。")
+            self.lbl_lg_view.setText("未选择基底镜像")
+            self.lbl_lg_state.setText("未选镜像")
+            self.lbl_lg_log.setText("已清除自选基底，请重新选择。")
             return
         path, _ = QFileDialog.getOpenFileName(self, "选择基底 BIOS 镜像", "",
                                               "BIOS 镜像 (*.bin)")
@@ -3989,18 +4013,21 @@ class MainWindow(QWidget):
     def _lg_sync_base(self):
         c = self._lg.get("base_rom")
         if c and not os.path.isfile(c):
-            # 自选基底被删 / 移动：界面与实际一起回退到内置包
+            # 自选基底被删 / 移动：清空自选
             self._lg["base_rom"] = None
             c = None
-            self.lbl_lg_log.setText("自选基底已不存在，已回退到内置包。")
+            self.lbl_lg_log.setText("自选基底已不存在，请重新选择。")
         if c:
             self.lbl_lg_base.setText("自选：%s" % os.path.basename(c))
             self.btn_lg_base_pick.setText("清除自选")
         else:
-            self.lbl_lg_base.setText("基底：内置包")
-            self.btn_lg_base_pick.setText("自选 BIOS 镜像…")
+            self.lbl_lg_base.setText("未选择基底镜像")
+            self.btn_lg_base_pick.setText("选择基底镜像…")
 
     def _lg_pick(self):
+        if not self._lg_base_rom_path():
+            self.lbl_lg_log.setText("请先选择基底镜像，再挑选 LOGO 图片。")
+            return
         path, _ = QFileDialog.getOpenFileName(
             self, "选择开机 LOGO 图片", "",
             "图片 (*.png *.jpg *.jpeg *.bmp *.webp)")
@@ -4025,6 +4052,118 @@ class MainWindow(QWidget):
     def _lg_widget_sync(self):
         self._restyle(self.lbl_lg_state)
 
+    def _lg_export(self):
+        kind = self._lg_base()
+        if not self._lg_base_rom_path():
+            self.lbl_lg_log.setText("请先选择基底镜像，再导出 LOGO。")
+            return
+        bmp = self._lg["bmp"]
+        src_note = "当前载入的自定义图"
+        if not bmp:
+            try:
+                bmp = self._lg_orig_bmp(kind)
+                src_note = "镜像里的官方原图"
+            except Exception as e:                              # noqa: BLE001
+                self.lbl_lg_log.setText("读不到镜像里的 LOGO，无法导出：%s" % e)
+                return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出开机 LOGO", "logo_export",
+            "BMP 图片 (*.bmp);;PNG 图片 (*.png)")
+        if not path:
+            return
+        ext = os.path.splitext(path)[1].lower()
+        if not ext:
+            path += ".bmp"
+            ext = ".bmp"
+        try:
+            if ext == ".png":
+                if not bioslogo.preview_png(bmp, path, max_w=800):
+                    raise ValueError("PNG 编码失败")
+            else:
+                with open(path, "wb") as f:
+                    f.write(bmp)
+        except Exception as e:                                  # noqa: BLE001
+            self.lbl_lg_log.setText("导出失败：%s" % e)
+            return
+        self.lbl_lg_log.setText("✓ 已导出%s：%s" % (src_note, os.path.basename(path)))
+
+    def _cl_tool(self):
+        return change_logo.find_tool(self._lg.get("cl_exe"))
+
+    def _cl_refresh_status(self):
+        tool = self._cl_tool()
+        if tool:
+            self.lbl_cl_status.setText("已检测到：%s" % os.path.basename(tool))
+            self.btn_cl_run.setEnabled(True)
+        else:
+            self.lbl_cl_status.setText("未检测到 ChangeLogoPro.exe（可点「指定工具…」手动选择）")
+            self.btn_cl_run.setEnabled(False)
+        self._restyle(self.lbl_cl_status)
+
+    def _cl_pick_tool(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择 ChangeLogoPro.exe", "", "可执行文件 (*.exe)")
+        if not path:
+            return
+        self._lg["cl_exe"] = path
+        self._cl_refresh_status()
+        self.lbl_cl_log.setText("已指定工具：%s" % os.path.basename(path))
+
+    def _cl_run(self):
+        tool = self._cl_tool()
+        if not tool:
+            self.lbl_cl_log.setText("未找到工具：可点「指定工具…」选择 ChangeLogoPro.exe。")
+            return
+        mode = self.cmb_cl_mode.currentData()
+        rom_in = self._lg_base_rom_path()
+        if not rom_in or not os.path.isfile(rom_in):
+            self.lbl_cl_log.setText("请先选择基底镜像（本地 16 MB 镜像），再调用外部工具。")
+            return
+
+        if mode == change_logo.MODE_LIST:
+            image, rom_out = "", None
+        elif mode == change_logo.MODE_EXTRACT:
+            img_out, _ = QFileDialog.getSaveFileName(
+                self, "导出 Logo 图片", "logo_extract", "BMP 图片 (*.bmp)")
+            if not img_out:
+                return
+            image, rom_out = img_out, None
+        else:
+            img, _ = QFileDialog.getOpenFileName(
+                self, "选择要替换的图片", "", "图片 (*.png *.jpg *.jpeg *.bmp)")
+            if not img:
+                return
+            kind = self._lg_base()
+            rom_out = os.path.join(os.path.dirname(self.presets_dir), "bios_custom",
+                                   "logo_ext_%s.bin" % kind)
+            os.makedirs(os.path.dirname(rom_out), exist_ok=True)
+            image, rom_out = img, rom_out
+
+        self.btn_cl_run.setEnabled(False)
+        self.lbl_cl_log.setText("正在调用外部工具…")
+
+        def work():
+            return change_logo.run(mode, rom_in, image, rom_out, exe=tool)
+
+        def done(res):
+            self.btn_cl_run.setEnabled(True)
+            if isinstance(res, Exception):                      # noqa: BLE001
+                self.lbl_cl_log.setText("调用失败：%s" % res)
+                return
+            if res["ok"]:
+                if mode == change_logo.MODE_LIST:
+                    self.lbl_cl_log.setText("✓ 镜像 Logo 列表：\n%s"
+                                            % (res["stdout"] or "").strip()[:300])
+                else:
+                    tail = os.path.basename(rom_out) if rom_out else os.path.basename(image)
+                    self.lbl_cl_log.setText("✓ 外部工具完成：%s\n%s"
+                                            % (tail, (res["stdout"] or "").strip()[:300]))
+            else:
+                self.lbl_cl_log.setText("外部工具未成功：%s\n%s" % (
+                    res["why"], (res["stderr"] or res["stdout"] or "").strip()[:300]))
+
+        self._jx_async(work, done)
+
     def _lg_reset(self):
         kind = self._lg_base()
         cp = self._lg_custom_path(kind)
@@ -4036,17 +4175,25 @@ class MainWindow(QWidget):
             return
         self._lg["bmp"] = None
         self._lg["built"] = None
-        try:
-            self._lg_show(self._lg_orig_bmp(kind), "当前是官方原图")
-        except Exception:                                       # noqa: BLE001
-            pass
-        self.lbl_lg_state.setText("官方原图")
+        rom = self._lg_base_rom_path()
+        if rom:
+            try:
+                self._lg_show(self._lg_orig_bmp(kind), os.path.basename(rom))
+                self.lbl_lg_state.setText("当前原图")
+            except Exception:                               # noqa: BLE001
+                self.lbl_lg_state.setText("未选镜像")
+        else:
+            self.lbl_lg_view.setText("未选择基底镜像")
+            self.lbl_lg_state.setText("未选镜像")
         self._lg_widget_sync()
-        self.lbl_lg_log.setText("已恢复官方图，下次写入用官方镜像。")
+        self.lbl_lg_log.setText("已清空待载入的图片与自定义镜像。")
 
     def _lg_build(self):
         if not self._lg["bmp"]:
             self.lbl_lg_log.setText("先点「选择图片」挑一张图。")
+            return
+        if not self._lg_base_rom_path():
+            self.lbl_lg_log.setText("请先选择基底镜像，再生成 ROM。")
             return
         kind = self._lg_base()
         self.btn_lg_build.setEnabled(False)
@@ -4073,8 +4220,8 @@ class MainWindow(QWidget):
             self.lbl_lg_state.setText("已生成自定义")
             self._lg_widget_sync()
             self.lbl_lg_log.setText(
-                "✓ 已生成 %s（压缩 %d 字节，模块 %d→%d，sha %s）→ 去「鸡血 BIOS」页插 U 盘点写入"
-                % ("logo_%s.bin" % kind, v["comp"], v["old_size"], v["new_size"], v["new_sha"]))
+                "✓ 已生成 logo_custom.bin（压缩 %d 字节，模块 %d→%d，sha %s）→ 去「鸡血 BIOS」页写入"
+                % (v["comp"], v["old_size"], v["new_size"], v["new_sha"]))
 
         self._jx_async(work, done)
 
@@ -5329,7 +5476,7 @@ def _asset_path(name):
     return os.path.join(BASE_DIR, "assets", name)
 
 
-ABOUT_VERSION = "1.6.6"
+ABOUT_VERSION = "1.6.8"
 ABOUT_FEATS = [
     "6 套皮肤，页脚下拉即换：ROG 红黑 / 冰川蓝 / 星云紫 / 翡翠绿 / 琥珀橙 / 极简钢灰",
     "5 路独立特效 + 总亮度 / 总速度 / 联排 / 帧率；6 个情景模式一键换整套风格；灯效轮播、过热守护",
@@ -5339,8 +5486,8 @@ ABOUT_FEATS = [
     "风扇调速：5 路 PWM 手动 / 一键全速 / 静音 40% / 按温度智能曲线 / 交回 BIOS（四个模式按钮等高同宽、点哪个亮哪个）",
     "软超频三档（静音 / 均衡 / 狂暴）+ CPU 频率实时显示",
     "自动化：夜间模式、程序联动、全局快捷键；预设 zip 导入导出",
-    "开机 LOGO：换 BIOS 那张开机图，800×600 自动缩放，生成镜像后随刷写盘一起刷",
-    "鸡血 BIOS：校验精粤官方原版/鸡血包、一键铺 U 盘刷写盘、跑分对比全核频率（固件仍由你自己刷）",
+    "开机 LOGO：基底自选本地镜像，换 BIOS 那张开机图，800×600 自动缩放，可导出当前图存档；生成镜像后随刷写盘一起刷",
+    "鸡血 BIOS：基于自选本地镜像铺 U 盘刷写盘、跑分对比全核频率（固件由你自备、自行刷写）",
     "托盘常驻、**右键菜单直达每一页**（7 个标签页 + 灯效 / 皮肤 / 风扇 / 性能档），单实例单窗口、开机自启、安装包一键装",
 ]
 

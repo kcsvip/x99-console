@@ -5,11 +5,17 @@ import os
 
 proj = os.path.dirname(SPECPATH)          # spec 放在 打包\ 下，proj 就是工程根目录
 
+# 内置工具目录（ChangeLogoPro.exe，闭源第三方，不进开源仓库；本地打包时存在才收集）
+_datas = [(os.path.join(proj, "assets"), "assets")]
+_tools = os.path.join(proj, "tools")
+if os.path.isdir(_tools):
+    _datas.append((_tools, "tools"))
+
 a = Analysis(
     [os.path.join(proj, "client_qt.py")],
     pathex=[proj],
     binaries=[],
-    datas=[(os.path.join(proj, "assets"), "assets")],
+    datas=_datas,
     hiddenimports=["hid", "serial"],
     hookspath=[],
     runtime_hooks=[],

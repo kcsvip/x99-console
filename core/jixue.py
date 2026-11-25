@@ -307,6 +307,106 @@ def write_usb(drive, kind="jixue", custom_rom=None):
     return True, log
 
 
+def _local_efi_root():
+    """找本地自备的官方包目录（含 EFI\\BOOT 启动文件），返回路径或 None。
+
+    合规：程序本身不分发任何 EFI 刷写器 / 固件；这里只在用户本地已自备
+    官方包目录时复用其启动文件，缺目录就明确报错，不联网下载。
+    """
+    for k in KINDS:
+        d = package_dir(k)
+        if os.path.isdir(os.path.join(d, "EFI", "BOOT")):
+            return d
+    return None
+
+
+def write_usb_custom(drive, custom_rom=None):
+    """基于自选 16 MB 镜像制作 U 盘刷写盘，返回 (ok, 日志行列表)。
+
+    custom_rom：本地自选的 16 MB 镜像（必需）。EFI\\BOOT 启动文件复用
+    本地自备官方包目录；缺该目录则返回失败提示。
+    """
+    log = []
+    ok, why = usb_ok(drive)
+    if not ok:
+        return False, [why]
+    if not custom_rom or not os.path.isfile(custom_rom):
+        return False, ["未选择自选镜像：写入前必须先在本页选择本地 16 MB BIOS 镜像"]
+    if os.path.getsize(custom_rom) != BIN_SIZE:
+        return False, ["自选镜像大小不是 16 MB，拒绝写入：%s" % custom_rom]
+
+    src_root = _local_efi_root()
+    if not src_root:
+        return False, ["缺少本地自备的 EFI 刷写环境目录（官方包 EFI\\BOOT），"
+                        "无法制作可启动刷写盘；请把自备官方包放到 assets\\bios 对应目录后再试"]
+    src_efi = os.path.join(src_root, "EFI")
+
+    dst_efi = os.path.join(drive, "EFI")
+    try:
+        if os.path.isdir(dst_efi):
+            # 只清理 EFI\BOOT，避免动到别人放的东西
+            shutil.rmtree(os.path.join(dst_efi, "BOOT"), ignore_errors=True)
+            log.append("已清理旧的 EFI\\BOOT")
+        shutil.copytree(src_efi, dst_efi, dirs_exist_ok=True)
+        shutil.copyfile(custom_rom, os.path.join(dst_efi, "BOOT", PLATFORM_ID + ".bin"))
+        log.append("已用自选镜像覆盖 %s.bin" % PLATFORM_ID)
+        n = 0
+        for _r, _ds, fs in os.walk(os.path.join(dst_efi, "BOOT")):
+            n += len(fs)
+        log.append("已写入 U 盘：EFI\\BOOT 共 %d 个文件" % n)
+    except Exception as e:
+        return False, ["写入失败：%s" % e]
+
+    # 教程 PDF + 步骤说明一并放到盘根
+    try:
+        pdf = None
+        for f in os.listdir(src_root):
+            if f.lower().endswith(".pdf"):
+                pdf = os.path.join(src_root, f)
+                break
+        if pdf:
+            shutil.copy2(pdf, os.path.join(drive, os.path.basename(pdf)))
+            log.append("已附带教程：%s" % os.path.basename(pdf))
+        with open(os.path.join(drive, "刷机说明.txt"), "w", encoding="utf-8-sig") as f:
+            f.write(usb_note_custom())
+        log.append("已写入 刷机说明.txt")
+    except Exception as e:
+        log.append("附带文件写入失败（不影响刷写）：%s" % e)
+
+    # 回读校验：大小 + 哈希必须与自选镜像一致
+    try:
+        p = os.path.join(drive, "EFI", "BOOT", PLATFORM_ID + ".bin")
+        if os.path.getsize(p) != BIN_SIZE:
+            return False, log + ["回读校验失败：镜像大小不对，建议重插 U 盘再写一次"]
+        src_h = hashlib.sha256(open(custom_rom, "rb").read()).hexdigest()
+        dst_h = hashlib.sha256(open(p, "rb").read()).hexdigest()
+        if src_h != dst_h:
+            return False, log + ["回读校验失败：哈希不一致，换根 U 盘重写"]
+        log.append("回读校验通过：%s.bin 16 MB，哈希 %s（与自选镜像一致）"
+                   % (PLATFORM_ID, src_h[:8]))
+    except Exception as e:
+        return False, log + ["回读校验失败：%s" % e]
+    return True, log
+
+
+def usb_note_custom():
+    return (
+        "X99 控制台 · 自选镜像刷写盘\n"
+        "================================\n\n"
+        "本盘固件为你自选的本地镜像；EFI 启动文件来自本地自备的官方包目录。\n\n"
+        "刷写步骤：\n"
+        "  1. 关机，插这块 U 盘到主板后置 USB 口\n"
+        "  2. 开机连按 F11（部分 BIOS 是 F8 / F7）进启动菜单，选 U 盘\n"
+        "  3. 自动进入 EFI Shell，startup.nsh 会自动执行刷写\n"
+        "  4. 刷写过程中**绝对不能断电、不能按电源键**，等它自己重启\n"
+        "  5. 重启后进 BIOS 恢复原来的设置（时间、启动顺序、风扇策略）\n\n"
+        "注意：\n"
+        "  - 这块板是单 BIOS，刷坏只能靠编程器救砖；刷之前请确认镜像型号匹配、电源稳定\n"
+        "  - 镜像来源合法性与型号匹配由使用者自行负责\n"
+        "  - 刷完后可在 X99 控制台的「鸡血 BIOS」页跑分，对比全核频率\n"
+    )
+
+
 def usb_note(kind):
     t = KINDS[kind]["title"]
     return (

@@ -20,6 +20,9 @@ bin/
 release/
 *.exe
 
+# ---- 内置闭源第三方工具（ChangeLogoPro，仅本地打包进安装包，不进 git）----
+tools/
+
 
 # ---- 临时 / 备份文件 ----
 *.tmp
