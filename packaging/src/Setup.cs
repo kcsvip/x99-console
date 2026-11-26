@@ -18,7 +18,7 @@ namespace LightDeckSetup
         public const string AppTitle = "X99 控制台 · ARGB 灯效控制台";
         public const string AppExe = "X99控制台.exe";
         public const string UninstExe = "卸载X99控制台.exe";
-        public const string AppVersion = "1.6.8";
+        public const string AppVersion = "1.6.9";
         public const string Publisher = "自用 · 为本机精粤 X99M GAMING D3/ARGB 主板编写";
         public const string RegKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\X99控制台";
 
@@ -152,6 +152,46 @@ namespace LightDeckSetup
             catch { }
         }
 
+        // 覆盖安装前清掉旧版本运行时，避免残留的 PySide6 / shiboken6 / VC++ DLL
+        // 与新打包的 Python 运行时冲突（旧 DLL 会被优先加载，导致 Shiboken 加载失败、启动即退）。
+        // 只删运行时条目，data（灯效/键盘/鼠标/风扇/预设等用户配置）原样保留。
+        public static void CleanRuntime(string dir)
+        {
+            if (!Directory.Exists(dir)) return;
+            try
+            {
+                foreach (string d in new string[] { "_internal", "hwmon" })
+                {
+                    string p = Path.Combine(dir, d);
+                    if (Directory.Exists(p)) Directory.Delete(p, true);
+                }
+            }
+            catch { }
+            try
+            {
+                foreach (string f in new string[] { AppExe, UninstExe })
+                {
+                    string p = Path.Combine(dir, f);
+                    if (File.Exists(p)) File.Delete(p);
+                }
+            }
+            catch { }
+            // 根目录历史遗留的 VC++ / API-set 运行时 DLL（新版由 _internal 自带，根目录旧副本会被优先加载）
+            try
+            {
+                foreach (string f in Directory.GetFiles(dir))
+                {
+                    string n = Path.GetFileName(f).ToLowerInvariant();
+                    if (n.StartsWith("api-ms-win-") || n == "ucrtbase.dll"
+                        || n == "vcruntime140.dll" || n == "vcruntime140_1.dll" || n == "msvcp140.dll")
+                    {
+                        try { File.Delete(f); } catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
         public static void RunPowerShell(string script)        {
             string enc = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
             ProcessStartInfo psi = new ProcessStartInfo(_psPath,
@@ -272,6 +312,7 @@ namespace LightDeckSetup
             KillRunning();
             MigrateLegacy(dir);
             RemoveLegacy();
+            CleanRuntime(dir);
             ExtractPayload(dir);
 
             string exe = Path.Combine(dir, AppExe);
